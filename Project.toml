@@ -1,0 +1,7 @@
+name = "SampleFitCombine"
+uuid = "4b27374f-6fc7-442c-82b8-8abb12fffe86"
+authors = ["Jock Lawrie <jock.lawrie@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
