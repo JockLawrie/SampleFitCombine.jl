@@ -1,6 +1,8 @@
 module SampleFitCombine
 
-export Ensemble, combine!, predict
+export Ensemble,
+       ProbabilityWeights,
+       sample!, fit!, combine!, predict
 
 using Distributions  # MixtureModel
 using MLJ
@@ -8,7 +10,9 @@ using MLJBase    # target_scitype
 using Random     # GLOBAL_RNG
 using StatsBase  # sample!
 
-import MLJ.predict  # To extend with SampleFitCombine.predict
+#import StatsBase.sample!  # Re-exported
+#import MLJ.fit!           # Re-exported
+import MLJ.predict         # To extend with SampleFitCombine.predict
 
 
 struct Ensemble{T <: Supervised}
@@ -19,11 +23,13 @@ end
 Ensemble(T) = Ensemble(T[], Float64[])
 
 
+combine!(x) = nothing
 
-predict(ensemble::Ensemble{T <: Probabilistic}, Xnew) = MixtureModel([predict(mchn, Xnew) for mchn in ensemble.components], copy(ensemble.weights))
 
-function predict(ensemble::Ensemble{T}, Xnew)
-    MLJBase.target_scitype(::Type{T}) == AbstractVector{<:Finite} && return predict_classifier(ensemble, Xnew)
+predict(ensemble::Ensemble{<:Probabilistic}, Xnew) = MixtureModel([predict(mchn, Xnew) for mchn in ensemble.components], copy(ensemble.weights))
+
+function predict(ensemble::Ensemble, Xnew)
+    MLJBase.target_scitype(Type{T}) == AbstractVector{<:Finite} && return predict_classifier(ensemble, Xnew)
     result     = 0.0
     components = ensemble.components
     weights    = ensemble.weights
