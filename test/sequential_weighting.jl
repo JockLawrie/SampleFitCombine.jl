@@ -1,20 +1,20 @@
-#=
-Bootstrp Aggregation (Bagging).
-=#
-
-using DataFrames
 using Distributions
 using Logging
 using MLJ
 using MLJBase
-import MLJModels
-import Distributions
-import GLM
-using MLJModels.GLM_
-using Tables
 using StatsBase
 using Optim
 
+mutable struct NormalKDE <: MLJBase.Probabilistic
+end
+
+MLJBase.target_scitype(::Type{NormalKDE}) = AbstractVector{<:MLJ.Continuous}
+
+MLJBase.fit(model::NormalKDE, verbosity::Integer, X, y) = [mean(y), std(y; corrected=false)], nothing, nothing  # fitresult, cache, report
+
+MLJBase.predict(model::NormalKDE, fitresult, Xnew) = Normal(fitresult[1], fitresult[2])
+
+################################################################################
 
 struct MyEnsemble{M<:Model}
     model::M
@@ -28,8 +28,10 @@ MyEnsemble(model, K, samplingfraction) = MyEnsemble(model, K, samplingfraction, 
 
 function fitcomponent!(ensemble::MyEnsemble, X, y, rows)
     length(ensemble.components) >= ensemble.K && error("Ensemble already has K=$(ensemble.K) trained components")
-    mchn = machine(ensemble.model, X, y)
+    X2   = reshape(X, size(X, 1), 1)  # fit! expects a 2D array
+    mchn = machine(ensemble.model, X2, y)
     fit!(mchn, rows=rows)
+    mchn.args = (X, y)  # Reinstate x::Vector{Vector{Float64}}
     push!(ensemble.components, mchn)
 end
 
@@ -89,13 +91,15 @@ function combine_optimal_weights!(ensemble, loss)
     ytrain = ensemble.components[1].args[2]
     logits = fill(0.0, ensemble.K - 1)
     w      = fill(0.0, ensemble.K)
-    n      = size(Xtrain, 1)
+    n      = size(Xtrain, 2)
+    T      = typeof(predict(ensemble.components[1], Xtrain[1]))
+    pred_components = Vector{T}(undef, length(ensemble.components))
     function objective(b)
         result = 0.0
         computeweights!(w, b)
         combine_prespecified_weights!(ensemble, w)
         for i = 1:n
-            yhat    = predict(ensemble, view(Xtrain, i:i, :))[1]
+            yhat    = predict!(ensemble, Xtrain[i], pred_components)
             result += loss(yhat, ytrain[i])
         end
         result
@@ -121,32 +125,37 @@ function computeweights!(weights, logits)
     weights ./= wtotal
 end
 
-function predict(ensemble::MyEnsemble, Xtest)
-    n = size(Xtest, 1)
-    v = view(Xtest, 1:1, :)
-    pred1  = MixtureModel([predict(mchn, v)[1] for mchn in ensemble.components], ensemble.weights)
-    result = Vector{typeof(pred1)}(undef, n)
+function predict(ensemble::MyEnsemble, Xtest::Vector{Vector{Float64}})
+    n = size(Xtest, 2)
+    T = typeof(predict(ensemble.components[1], Xtest[1]))
+    pred_components = Vector{T}(undef, length(ensemble.components))
+    pred1     = predict!(ensemble, Xtest[1], pred_components)
+    result    = Vector{typeof(pred1)}(undef, n)
     result[1] = pred1
     for i = 2:n
-        v = view(Xtest, i:i, :)
-        result[i] = MixtureModel([predict(mchn, v)[1] for mchn in ensemble.components], ensemble.weights)
+        result[i] = predict!(ensemble, Xtest[i], pred_components)
     end
     result
 end
 
-predict(mchn::Machine, Xnew) = MLJBase.predict(mchn.model, mchn.fitresult, Xnew)
+function predict!(ensemble::MyEnsemble, Xrow::Vector{Float64}, pred_components)
+    for (k, mchn) in enumerate(ensemble.components)
+        pred_components[k] = predict(mchn, Xrow)
+    end
+    MixtureModel(pred_components, ensemble.weights)
+end
 
-# TODO: predictrow for non-Probabilistic models
+predict(mchn::Machine, Xnew) = MLJBase.predict(mchn.model, mchn.fitresult, Xnew)
 
 
 ############################
-# Data: Y ~ N(2 + 3x, 2^2), where x is Uniform(5, 15)
+# Data: Y ~ 0.5*N(10, 2^2) + 0.5*N(15, 2^2)
 N = 1000
-X = DataFrame(x1=5.0 .+ 10.0 .* rand(N))
-y = 2.0 .+ 3.0 .* X[!, :x1] .+ 2.0 .* randn(N)
+X = fill([1.0], N)
+y = vcat(10.0 .+ 2.0*randn(Int(0.5*N)), 15.0 .+ 2.0*randn(Int(0.5*N)))
 
 # Ensemble
-ensemble = MyEnsemble(LinearRegressor(), 5, 0.8)
+ensemble = MyEnsemble(NormalKDE(), 2, 0.8)
 
 # Sample and fit
 n       = Int(round(ensemble.samplingfraction * N))  # Sample size
@@ -171,7 +180,7 @@ combine!(ensemble; loss=(yhat, y) -> -logpdf(yhat, y))  # Optimal weights
 println(ensemble.weights)
 
 #  Predict
-Xtest = view(X, 1:3, :)
+Xtest = X[1:3]
 for mchn in ensemble.components
     println(predict(mchn, Xtest))
 end
