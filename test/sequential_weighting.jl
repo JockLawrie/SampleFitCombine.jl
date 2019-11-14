@@ -18,6 +18,7 @@ function MLJBase.fit(model::NormalKDE, verbosity::Integer, X, y)
     Q = 0.0  # running sum of squares (the numerator of the variance)
     for i = 1:n
         w  = X[i, :weight]
+        w == 0.0 && continue
         yi = y[i]
         W += w
         Aprev = A
@@ -198,3 +199,18 @@ for mchn in ensemble.components
     println(predict(mchn, Xtest))
 end
 println(predict(ensemble, Xtest))
+
+
+# Sequential weighting
+ensemble = MyEnsemble(NormalKDE(), 2, 0.8)
+n        = Int(round(ensemble.samplingfraction * N))  # Sample size
+i_all    = collect(1:N)  # Population row indices
+i_train  = fill(0, n)    # Sample row indices
+loss     = (yhat, y) -> -logpdf(yhat, y)
+fitcomponent!(ensemble, X, y, i_all)
+for k = 2:ensemble.K
+    reweight!(ensemble, loss)  # Reweight the sample according to loss (modifies X[:, :weight])
+    fitcomponent!(ensemble, X, y, i_all)
+end
+combine!(ensemble; loss=loss)  # Optimal weights
+println(ensemble.weights)
