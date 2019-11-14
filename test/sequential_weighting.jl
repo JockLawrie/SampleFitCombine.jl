@@ -1,3 +1,4 @@
+using DataFrames
 using Distributions
 using Logging
 using MLJ
@@ -10,7 +11,21 @@ end
 
 MLJBase.target_scitype(::Type{NormalKDE}) = AbstractVector{<:MLJ.Continuous}
 
-MLJBase.fit(model::NormalKDE, verbosity::Integer, X, y) = [mean(y), std(y; corrected=false)], nothing, nothing  # fitresult, cache, report
+function MLJBase.fit(model::NormalKDE, verbosity::Integer, X, y)
+    n = length(y)
+    W = 0.0  # running total weight
+    A = 0.0  # running mean
+    Q = 0.0  # running sum of squares (the numerator of the variance)
+    for i = 1:n
+        w  = X[i, :weight]
+        yi = y[i]
+        W += w
+        Aprev = A
+        A += w * (yi - A) / W
+        Q += w * (yi - Aprev) * (yi - A)
+    end
+    [A, sqrt(Q/W)], nothing, nothing  # fitresult, cache, report
+end
 
 MLJBase.predict(model::NormalKDE, fitresult, Xnew) = Normal(fitresult[1], fitresult[2])
 
@@ -28,10 +43,8 @@ MyEnsemble(model, K, samplingfraction) = MyEnsemble(model, K, samplingfraction, 
 
 function fitcomponent!(ensemble::MyEnsemble, X, y, rows)
     length(ensemble.components) >= ensemble.K && error("Ensemble already has K=$(ensemble.K) trained components")
-    X2   = reshape(X, size(X, 1), 1)  # fit! expects a 2D array
-    mchn = machine(ensemble.model, X2, y)
+    mchn = machine(ensemble.model, X, y)
     fit!(mchn, rows=rows)
-    mchn.args = (X, y)  # Reinstate x::Vector{Vector{Float64}}
     push!(ensemble.components, mchn)
 end
 
@@ -92,15 +105,15 @@ function combine_optimal_weights!(ensemble, loss)
     logits = fill(0.0, ensemble.K - 1)
     w      = fill(0.0, ensemble.K)
     n      = size(Xtrain, 2)
-    T      = typeof(predict(ensemble.components[1], Xtrain[1]))
+    T      = typeof(predict(ensemble.components[1], Xtrain[1, :x]))
     pred_components = Vector{T}(undef, length(ensemble.components))
     function objective(b)
         result = 0.0
         computeweights!(w, b)
         combine_prespecified_weights!(ensemble, w)
         for i = 1:n
-            yhat    = predict!(ensemble, Xtrain[i], pred_components)
-            result += loss(yhat, ytrain[i])
+            yhat    = predict!(ensemble, Xtrain[i, :x], pred_components)
+            result += loss(yhat, ytrain[i])  # Uniform weights
         end
         result
     end
@@ -126,7 +139,7 @@ function computeweights!(weights, logits)
 end
 
 function predict(ensemble::MyEnsemble, Xtest::Vector{Vector{Float64}})
-    n = size(Xtest, 2)
+    n = size(Xtest, 1)
     T = typeof(predict(ensemble.components[1], Xtest[1]))
     pred_components = Vector{T}(undef, length(ensemble.components))
     pred1     = predict!(ensemble, Xtest[1], pred_components)
@@ -151,7 +164,7 @@ predict(mchn::Machine, Xnew) = MLJBase.predict(mchn.model, mchn.fitresult, Xnew)
 ############################
 # Data: Y ~ 0.5*N(10, 2^2) + 0.5*N(15, 2^2)
 N = 1000
-X = fill([1.0], N)
+X = DataFrame(weight=fill(1.0, N), x=fill([1.0], N))  # row = (weight=1.0, x=Vector{Float64})
 y = vcat(10.0 .+ 2.0*randn(Int(0.5*N)), 15.0 .+ 2.0*randn(Int(0.5*N)))
 
 # Ensemble
@@ -180,7 +193,7 @@ combine!(ensemble; loss=(yhat, y) -> -logpdf(yhat, y))  # Optimal weights
 println(ensemble.weights)
 
 #  Predict
-Xtest = X[1:3]
+Xtest = X[1:3, :x]
 for mchn in ensemble.components
     println(predict(mchn, Xtest))
 end
