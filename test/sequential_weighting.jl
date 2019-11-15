@@ -117,7 +117,7 @@ function combine_optimal_weights!(ensemble, lossfunc)
             yhat    = predict!(ensemble, Xtrain[i], pred_components)
             result += lossfunc(yhat, ytrain[i])  # Unweighted observations
         end
-        result
+        result / n
     end
     theta0 = logits
     opts   = Optim.Options(time_limit=60, f_tol=1e-12)   # Debug with show_trace=true
@@ -174,7 +174,7 @@ function loss(ensemble, X, y, lossfunc)
         yhat    = predict!(ensemble, X[i], pred_components)
         result += lossfunc(yhat, y[i])
     end
-    result
+    result / n
 end
 
 "Reweight the sample according to loss (modifies X[:, :weight])"
@@ -241,8 +241,7 @@ println(loss(ensemble, Xtest, ytest, lossfunc))
 # Sequential weighting. Observations (y[i], X[i]) are reweighted proportionally to weightfunc(yhat[i], y[i])
 ensemble   = MyEnsemble(NormalKDE(), 2, 0.8)
 lossfunc   = (yhat, y) -> -logpdf(yhat, y)
-#weightfunc = lossfunc
-weightfunc = (yhat, y) -> cdf(yhat, y)
+weightfunc = lossfunc
 fitcomponent!(ensemble, X, y)
 combine!(ensemble)  # Give the component a weight of 1.0
 for k = 2:ensemble.K
@@ -250,8 +249,31 @@ for k = 2:ensemble.K
     fitcomponent!(ensemble, X, y)
     combine!(ensemble; loss=lossfunc)  # Optimize weights
 end
-println(ensemble.weights)
 for mchn in ensemble.components
     println(predict(mchn, X[1:1, :x]))
 end
+println(ensemble.weights)
+println(loss(ensemble, X[!, :x], y, lossfunc))
+
+# Cyclic sequential weighting. Components are sequentially replaced with better-fitting components.
+ensemble   = MyEnsemble(NormalKDE(), 2, 0.8)
+lossfunc   = (yhat, y) -> -logpdf(yhat, y)
+weightfunc = (yhat, y) -> cdf(yhat, y)
+#weightfunc = (yhat, y) -> -logpdf(yhat, y)
+fitcomponent!(ensemble, X, y)
+push!(ensemble.components, ensemble.components[1])
+combine!(ensemble)  # Give the components equal weight
+for i = 1:10
+    popfirst!(ensemble.components)
+    popfirst!(ensemble.weights)
+    ensemble.weights ./= sum(ensemble.weights)
+
+    reweight!(ensemble, X, y, weightfunc)  # Reweight the sample according to loss (modifies X[:, :weight])
+    fitcomponent!(ensemble, X, y)
+    combine!(ensemble; loss=lossfunc)  # Optimize weights
+end
+for mchn in ensemble.components
+    println(predict(mchn, X[1:1, :x]))
+end
+println(ensemble.weights)
 println(loss(ensemble, X[!, :x], y, lossfunc))
