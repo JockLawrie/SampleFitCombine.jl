@@ -100,27 +100,28 @@ function combine_uniform_weights!(ensemble)
     nothing
 end
 
-function combine_optimal_weights!(ensemble, loss)
-    Xtrain = ensemble.components[1].args[1]
+function combine_optimal_weights!(ensemble, lossfunc)
+    Xtrain = ensemble.components[1].args[1]  # DataFrame
+    Xtrain = Xtrain[!, :x]  # Vector{Vector{Float64}}
     ytrain = ensemble.components[1].args[2]
     logits = fill(0.0, ensemble.K - 1)
     w      = fill(0.0, ensemble.K)
-    n      = size(Xtrain, 2)
-    T      = typeof(predict(ensemble.components[1], Xtrain[1, :x]))
+    n      = size(Xtrain, 1)
+    T      = typeof(predict(ensemble.components[1], Xtrain[1]))
     pred_components = Vector{T}(undef, length(ensemble.components))
     function objective(b)
         result = 0.0
         computeweights!(w, b)
         combine_prespecified_weights!(ensemble, w)
         for i = 1:n
-            yhat    = predict!(ensemble, Xtrain[i, :x], pred_components)
-            result += loss(yhat, ytrain[i])  # Uniform weights
+            yhat    = predict!(ensemble, Xtrain[i], pred_components)
+            result += lossfunc(yhat, ytrain[i])  # Unweighted observations
         end
         result
     end
-    theta0 = copy(logits)
+    theta0 = logits
     opts   = Optim.Options(time_limit=60, f_tol=1e-12)   # Debug with show_trace=true
-    mdl    = optimize(objective, theta0, LBFGS(), opts)  # TODO: optimize(objective, theta0, LBFGS(), opts; autodiff=:forward)
+    mdl    = optimize(objective, theta0, LBFGS(), opts;) # TODO: optimize(objective, theta0, LBFGS(), opts; autodiff=:forward)
     theta1 = mdl.minimizer
     computeweights!(w, theta1)
     combine_prespecified_weights!(ensemble, w)
@@ -159,7 +160,26 @@ function predict!(ensemble::MyEnsemble, Xrow::Vector{Float64}, pred_components)
     MixtureModel(pred_components, ensemble.weights)
 end
 
-predict(mchn::Machine, Xnew) = MLJBase.predict(mchn.model, mchn.fitresult, Xnew)
+predict(mchn::Machine, Xnew::Vector{Float64})         =  MLJBase.predict(mchn.model, mchn.fitresult, Xnew)
+predict(mchn::Machine, Xnew::Vector{Vector{Float64}}) = [MLJBase.predict(mchn.model, mchn.fitresult, Xnew) for x in Xnew]
+
+"Returns: lossfunc(predict(ensemble, X), y)"
+function loss(ensemble, X, y, lossfunc)
+    result = 0.0
+    n = length(y)
+    size(X, 1) != n && error("X and y do not have the same number of observations.")
+    T = typeof(predict(ensemble.components[1], X[1]))
+    pred_components = Vector{T}(undef, length(ensemble.components))
+    for i = 1:n
+        yhat    = predict!(ensemble, X[i], pred_components)
+        result += lossfunc(yhat, y[i])
+    end
+    result
+end
+
+"Reweight the sample according to loss (modifies X[:, :weight])"
+function reweight!(ensemble, loss)
+end
 
 
 ############################
@@ -182,31 +202,36 @@ for k = 1:ensemble.K
 end
 
 # Combine
+lossfunc = (yhat, y) -> -logpdf(yhat, y)
 combine!(ensemble)  # Uniform weights
 println(ensemble.weights)
+println(loss(ensemble, X[!, :x], y, lossfunc))
 
 wt   = rand(ensemble.K)
 wt ./= sum(wt)
 combine!(ensemble; weights=wt)  # Pre-specified weights
 println(ensemble.weights)
+println(loss(ensemble, X[!, :x], y, lossfunc))
 
-combine!(ensemble; loss=(yhat, y) -> -logpdf(yhat, y))  # Optimal weights
+combine!(ensemble; loss=lossfunc)  # Optimal weights
 println(ensemble.weights)
+println(loss(ensemble, X[!, :x], y, lossfunc))
 
 #  Predict
 Xtest = X[1:3, :x]
+ytest = y[1:3]
 for mchn in ensemble.components
     println(predict(mchn, Xtest))
 end
 println(predict(ensemble, Xtest))
+println(loss(ensemble, Xtest, ytest, lossfunc))
 
-
+#=
 # Sequential weighting
 ensemble = MyEnsemble(NormalKDE(), 2, 0.8)
 n        = Int(round(ensemble.samplingfraction * N))  # Sample size
 i_all    = collect(1:N)  # Population row indices
 i_train  = fill(0, n)    # Sample row indices
-loss     = (yhat, y) -> -logpdf(yhat, y)
 fitcomponent!(ensemble, X, y, i_all)
 for k = 2:ensemble.K
     reweight!(ensemble, loss)  # Reweight the sample according to loss (modifies X[:, :weight])
@@ -214,3 +239,5 @@ for k = 2:ensemble.K
 end
 combine!(ensemble; loss=loss)  # Optimal weights
 println(ensemble.weights)
+println(loss(ensemble, X[!, :x], y, lossfunc))
+=#
