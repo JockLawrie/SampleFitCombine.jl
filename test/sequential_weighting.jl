@@ -42,7 +42,7 @@ end
 
 MyEnsemble(model, K, samplingfraction) = MyEnsemble(model, K, samplingfraction, Machine{typeof(model)}[], Float64[])
 
-function fitcomponent!(ensemble::MyEnsemble, X, y, rows)
+function fitcomponent!(ensemble::MyEnsemble, X, y; rows=collect(1:length(y)))
     length(ensemble.components) >= ensemble.K && error("Ensemble already has K=$(ensemble.K) trained components")
     mchn = machine(ensemble.model, X, y)
     fit!(mchn, rows=rows)
@@ -202,36 +202,34 @@ N = 1000
 X = DataFrame(weight=fill(1.0, N), x=fill([1.0], N))  # row = (weight=1.0, x=Vector{Float64})
 y = vcat(10.0 .+ 2.0*randn(Int(0.5*N)), 15.0 .+ 2.0*randn(Int(0.5*N)))
 
-# Ensemble
+# Bagging
 ensemble = MyEnsemble(NormalKDE(), 2, 0.8)
-
-# Sample and fit
-n       = Int(round(ensemble.samplingfraction * N))  # Sample size
-w       = ProbabilityWeights([1.0/N for i = 1:N])    # Sample weights
-i_all   = collect(1:N)  # Population row indices
-i_train = fill(0, n)    # Sample row indices
+n        = Int(round(ensemble.samplingfraction * N))  # Sample size
+w        = ProbabilityWeights([1.0/N for i = 1:N])    # Sample weights
+i_all    = collect(1:N)  # Population row indices
+i_train  = fill(0, n)    # Sample row indices
 for k = 1:ensemble.K
     wsample!(i_all, w, i_train; replace=true, ordered=true);  # ordered means sorted
-    fitcomponent!(ensemble, X, y, i_train)
+    fitcomponent!(ensemble, X, y; rows=i_train)
 end
-
-# Combine
-lossfunc = (yhat, y) -> -logpdf(yhat, y)
 combine!(ensemble)  # Uniform weights
 println(ensemble.weights)
+lossfunc = (yhat, y) -> -logpdf(yhat, y)
 println(loss(ensemble, X[!, :x], y, lossfunc))
 
+# Combine components with pre-specified weights
 wt   = rand(ensemble.K)
 wt ./= sum(wt)
-combine!(ensemble; weights=wt)  # Pre-specified weights
+combine!(ensemble; weights=wt)
 println(ensemble.weights)
 println(loss(ensemble, X[!, :x], y, lossfunc))
 
-combine!(ensemble; loss=lossfunc)  # Optimal weights
+# Combine components with optimized weights
+combine!(ensemble; loss=lossfunc)
 println(ensemble.weights)
 println(loss(ensemble, X[!, :x], y, lossfunc))
 
-#  Predict
+# Predict
 Xtest = X[1:3, :x]
 ytest = y[1:3]
 for mchn in ensemble.components
@@ -240,16 +238,18 @@ end
 println(predict(ensemble, Xtest))
 println(loss(ensemble, Xtest, ytest, lossfunc))
 
-# Sequential weighting
-ensemble = MyEnsemble(NormalKDE(), 2, 0.8)
-i_all    = collect(1:N)  # Population row indices
-fitcomponent!(ensemble, X, y, i_all)
-combine!(ensemble)       # Give the component a weight of 1.0
+# Sequential weighting. Observations (y[i], X[i]) are reweighted proportionally to weightfunc(yhat[i], y[i])
+ensemble   = MyEnsemble(NormalKDE(), 2, 0.8)
+lossfunc   = (yhat, y) -> -logpdf(yhat, y)
+#weightfunc = lossfunc
+weightfunc = (yhat, y) -> cdf(yhat, y)
+fitcomponent!(ensemble, X, y)
+combine!(ensemble)  # Give the component a weight of 1.0
 for k = 2:ensemble.K
-    reweight!(ensemble, X, y, lossfunc)  # Reweight the sample according to loss (modifies X[:, :weight])
-    fitcomponent!(ensemble, X, y, i_all)
+    reweight!(ensemble, X, y, weightfunc)  # Reweight the sample according to loss (modifies X[:, :weight])
+    fitcomponent!(ensemble, X, y)
+    combine!(ensemble; loss=lossfunc)  # Optimize weights
 end
-combine!(ensemble; loss=lossfunc)  # Optimal weights
 println(ensemble.weights)
 for mchn in ensemble.components
     println(predict(mchn, X[1:1, :x]))
