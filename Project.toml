@@ -4,6 +4,8 @@ authors = ["Jock Lawrie <jock.lawrie@gmail.com>"]
 version = "0.1.0"
 
 [deps]
+Clustering = "aaaa29a8-35af-508c-8bc3-b662a17a0fe5"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 MLJ = "add582a8-e3ab-11e8-2d5e-e98b27df1bc7"
@@ -12,6 +14,7 @@ Optim = "429524aa-4258-5aef-a3af-852621145aeb"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
+UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 
 [extras]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
