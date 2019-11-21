@@ -38,7 +38,7 @@ This permits a wide range of methods for constructing ensembles.
    - Take a sample based on the loss of a previous fit.
    - Take the whole training set.
 
-3. __Fit__: Calling `fitcomponent!(ensemble, X, y)` trains a component (machine) on the sample and appended to the ensemble.
+3. __Fit__: Calling `fitcomponent!(ensemble, X, y)` trains a component (machine) on the sample and appends it to the ensemble.
    In future we could train on the whole training set with weights applied.
    Indeed the sampling ideas listed above are special cases of this approach.
 
