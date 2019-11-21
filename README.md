@@ -25,7 +25,7 @@ Here `lossfunc(yhat, y)` is a user-defined loss function defined on a single pre
 To train an ensemble of `K` components, we follow the sample-fit-combine strategy as described below.
 This permits a wide range of methods for constructing ensembles.
 
-1. We start with an `Ensemble` with 0 components, typically initialised with `ensemble = Ensemble(MyModel(), Kmax)`,
+1. We start with an `Ensemble` with 0 components, typically initialised with `ensemble = Ensemble(MyModel(args...), Kmax)`,
    for some model type `MyModel`.
    Here `Kmax` is the maximum number of components allowed in the ensemble
    (the actual number may or may not be known in advance).
@@ -40,15 +40,13 @@ This permits a wide range of methods for constructing ensembles.
 
 3. __Fit__: Calling `fitcomponent!(ensemble, X, y)` trains a component (machine) on the sample and appended to the ensemble.
    In future we could train on the whole training set with weights applied.
-   Indeed the sample methods listed above are special cases of this approach.
+   Indeed the sampling ideas listed above are special cases of this approach.
 
 4. __Combine__: The package provides 3 ways to combine the components into an ensemble:
 
-    a. `combine_uniform_weights!(ensemble)`: Set the same weight for each component.
-
-    b. `combine_prespecified_weights!(ensemble, w)`: Set the weights to the pre-specified vector `w`.
-
-    c. `combine_optimal_weights!(ensemble, X, y, lossfunc)`: Find the weights that minimize `lossfunc(ensemble, X, y, lossfunc)`
+    - `combine_uniform_weights!(ensemble)`: Set the same weight for each component.
+    - `combine_prespecified_weights!(ensemble, w)`: Set the weights to the pre-specified vector `w`.
+    - `combine_optimal_weights!(ensemble, X, y, lossfunc)`: Find the weights that minimize `loss(ensemble, X, y, lossfunc)`
 
 5. Repeat steps 2-4 until some stopping criterion is met.
    For example:
