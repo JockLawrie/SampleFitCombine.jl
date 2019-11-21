@@ -2,61 +2,50 @@
 
 ## Ensembles
 
-An ensemble is weighted combination of models.
+An `Ensemble` is weighted combination of models.
 
-It has the form:
+It is defined as follows:
 
 ```julia
-struct Ensemble{T <: Supervised}
-    components::Vector{machine{T}}
-    weights::Vector{Float64}
+struct Ensemble{M<:Model}
+    model::M
+    components::Vector{Machine{M}}  # Trained components
+    weights::Vector{Float64}        # Mixing weights
+    Kmax::Int                       # Maximum number of components
 end
 ```
 
-To train an ensemble of `K` components, we follow this format:
+## Sample-Fit-Combine
 
-```julia
-for k = 1:K
-    sample
-    fit
-    combine
-    stopcriteria(ensemble) && break
-end
-```
+To train an ensemble of `K` components, we follow the sample-fit-combine strategy as described below.
+This permits a wide range of methods for constructing ensembles.
 
-Specifying the `sample`, `fit` and `combine` steps independently from one another
-permits a wide range of ensembles to be constructed with a unified approach.
+1. We start with an `Ensemble` with 0 components, typically initialised with `ensemble = Ensemble(MyModel(), Kmax)`,
+   for some model type `MyModel`.
+   Here `Kmax` is the maximum number of components allowed in the ensemble
+   (the actual number may or may not be known in advance).
 
-The function `stopcriteria(ensemble)` specifies the conditions under which the loop should stop appending components to the ensemble.
-By default `stopcriteria(ensemble)=false`.
-This allows ensembles to be trained without knowing the number of components in advance, while also providing safety from an infinite loop.
+2. __Sample__: We take a sample of the training data. Example methods include:
 
-## Example: Bagging
+  - Take a random sample (used in bagging).
+  - Take a sample based on the loss of a previous fit.
+  - Take the whole training set.
 
-```julia
-```
+3. __Fit__: A component (machine) is trained on the sample and appended to the ensemble.
+   In future we could train on the whole training set with weights applied.
+   Indeed the sample methods listed above are special cases of this approach.
 
-See the `examples` directory for other more complex ensembles.
+4. __Combine__: The package provides 3 ways to combine the components into an ensemble:
 
-## Sample
+    a. `combine_uniform_weights!(ensemble)`: Set the same weight for each component.
+    b. `combine_prespecified_weights!(ensemble, w)`: Set the weights to the pre-specified vector `w`.
+    c. `combine_optimal_weights!(ensemble, X, y, lossfunc)`: Find the weights that minimize `lossfunc(ensemble, X, y, lossfunc)`
 
+5. Repeat steps 2-4 until some stopping criterion is met.
+   For example:
+   - Stop if the ensemble has `Kmax` components.
+   - Stop if `loss(ensemble, X, y, lossfunc)` hasn't changed much.
 
-## Fit
+## Examples
 
-
-## Combine
-
-The combine method assigns a weight to each component of the ensemble such that the weights sum to 1.
-The 3 weighting schemes are:
-1. :uniform. Assign equal weight to each component.
-2. weights::Vector{Float64}. Assign the pre-specified weights to the components.
-3. :optimize. Find weights that minimize...
-
-## Predict
-
-For an ensemble of classifiers, `predict(ensemble, Xnew)` outputs the category with the highest total weight among the predictions of the ensemble's components.
-For example, if an ensemble of 3 classifiers has weight vector `[0.1, 0.6, 0.3]`,
-and the 3 components `predict` categories `a`, `b` and `a` respectively, then the ensemble's prediction will be `b` because it has a weight of 0.6,
-whereas `a` has a weight of 0.4.
-
-For all other model types `predict(ensemble, Xnew)` is a weighted average of the component predictions.
+See the test cases for examples of some of the possibilities, which include bagging and clustering.

@@ -59,14 +59,18 @@ function clustercomponents!(ensemble, X, y, lossfunc)
     combine_uniform_weights!(ensemble)     # Give the component a weight of 1
 
     # Fit k clusters, k = 2:K
-    Lmin = loss(ensemble, X, y, lossfunc)  # Minimum loss achieved so far
-    N    = length(y)
-    Kmax = max_ncomponents(ensemble)
+    Lmin  = loss(ensemble, X, y, lossfunc)  # Minimum loss achieved so far
+    N     = length(y)
+    Kmax  = max_ncomponents(ensemble)
+    probs = fill(0.0, 1, N)
     for k = 2:Kmax
-        pred  = predict(ensemble, X)
-        probs = reshape([cdf(pred[i], y[i]) for i = 1:N], 1, N)
-        res   = kmeans(probs, k)
-        a     = assignments(res)
+        pred_components = SampleFitCombine.construct_prediction_components(ensemble, X[1])
+        for i = 1:N
+            pred = SampleFitCombine.predict!(ensemble, X[i], pred_components)
+            probs[1, i] = cdf(pred, y[i])
+        end
+        res = kmeans(probs, k)
+        a   = assignments(res)
         old_components = copy(components(ensemble))
         old_weights    = copy(weights(ensemble))
         for k2 = 1:(k-1)

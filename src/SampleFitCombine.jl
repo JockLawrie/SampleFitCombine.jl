@@ -1,10 +1,10 @@
 module SampleFitCombine
 
-export Ensemble,
+export Ensemble,  # Type
+       components, ncomponents, max_ncomponents, weights,  # Accessor functions
        fitcomponent!,
        combine_uniform_weights!, combine_prespecified_weights!, combine_optimal_weights!,
-       predict, loss,
-       components, ncomponents, max_ncomponents, weights  # Accessor functions
+       predict, loss
 
 using Distributions  # MixtureModel
 using Logging
