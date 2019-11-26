@@ -2,11 +2,13 @@ using Test
 using SampleFitCombine
 
 using Clustering
+using DataFrames
 using Distributions  # Normal(m, s)
 using Logging
 using MLJ
 using MLJBase
 using StatsBase  # wsample!, ProbabilityWeights
+using Tables
 using UnicodePlots
 
 import SampleFitCombine.weights  # Because StatsBase also exports weights, so we need to specify which method we want
@@ -64,9 +66,11 @@ function clustercomponents!(ensemble, X, y, lossfunc)
     Kmax  = max_ncomponents(ensemble)
     probs = fill(0.0, 1, N)
     for k = 2:Kmax
-        pred_components = SampleFitCombine.construct_prediction_components(ensemble, X[1])
-        for i = 1:N
-            pred = SampleFitCombine.predict!(ensemble, X[i], pred_components)
+        pred_components = SampleFitCombine.construct_prediction_components(ensemble, X)
+        i = 0
+        for row in Tables.rows(X)
+            i += 1
+            pred = SampleFitCombine.predictrow!(ensemble, row, pred_components)
             probs[1, i] = cdf(pred, y[i])
         end
         res = kmeans(probs, k)
@@ -80,7 +84,7 @@ function clustercomponents!(ensemble, X, y, lossfunc)
             # Sample
             sample = a .== cluster
             ytrain = y[sample]
-            Xtrain = X[sample]
+            Xtrain = X[sample, :]
 
             # Fit
             fitcomponent!(ensemble, Xtrain, ytrain)
@@ -113,7 +117,7 @@ println("")
 
 # Data: Y ~ 0.5*N(10, 2^2) + 0.5*N(20, 2^2)
 N = 1000
-X = fill([1.0], N)
+X = DataFrame(intercept=fill([1.0], N))
 y = vcat(10.0 .+ 2.0*randn(Int(0.5*N)), 20.0 .+ 2.0*randn(Int(0.5*N)))
 #histogram(y, nbins=30)
 
@@ -130,7 +134,7 @@ for k = 1:max_ncomponents(ensemble)
 end
 combine_uniform_weights!(ensemble)  # Combine
 for machine in components(ensemble)
-    println(predict(machine, X[1]))
+    println(predict(machine, X[1, :]))
 end
 println(weights(ensemble))
 
@@ -139,9 +143,7 @@ lossfunc = (yhat, y) -> -logpdf(yhat, y)
 loss_bagging = loss(ensemble, X, y, lossfunc)
 
 # Predict
-Xtest = X[1]
-ytest = y[1]
-println(predict(ensemble, Xtest))
+println(predict(ensemble, DataFrame(X[1, :])))
 
 # Alternative combine: Combine components with pre-specified weights
 w   = rand(max_ncomponents(ensemble))
@@ -164,7 +166,7 @@ ensemble = Ensemble(NormalDensity(), 10)  # Maximum of 10 components
 lossfunc = (yhat, y) -> -logpdf(yhat, y)
 clustercomponents!(ensemble, X, y, lossfunc)
 for machine in components(ensemble)
-    println(predict(machine, X[1]))
+    println(predict(machine, X[1, :]))
 end
 println(weights(ensemble))
 
@@ -178,7 +180,7 @@ println("")
 
 # Data: Y ~ 0.333*N(10, 2^2) + 0.333*N(17, 2^2) + 0.333*N(24, 2^2)
 N = 1500
-X = fill([1.0], N)
+X = DataFrame(intercept=fill([1.0], N))
 y = vcat(10.0 .+ 2.0*randn(round(Int(N/3))), 17.0 .+ 2.0*randn(round(Int(N/3))), 24.0 .+ 2.0*randn(round(Int(N/3))));
 #histogram(y, nbins=50)
 
@@ -187,7 +189,7 @@ ensemble = Ensemble(NormalDensity(), 10)  # Maximum of 10 components
 lossfunc = (yhat, y) -> -logpdf(yhat, y)
 clustercomponents!(ensemble, X, y, lossfunc)
 for machine in components(ensemble)
-    println(predict(machine, X[1]))
+    println(predict(machine, X[1, :]))
 end
 println(weights(ensemble))
 

@@ -11,6 +11,7 @@ using Logging
 using MLJ
 using MLJBase
 using Optim
+using Tables
 
 # Methods that this package extends
 import Distributions.components
@@ -109,7 +110,7 @@ end
 function combine_optimal_weights!(ensemble, X, y, lossfunc)
     logits = fill(0.0, ncomponents(ensemble) - 1)
     w      = fill(0.0, ncomponents(ensemble))
-    pred_components = construct_prediction_components(ensemble, X[1, :])
+    pred_components = construct_prediction_components(ensemble, X)
     function f(b)
         computeweights!(w, b)
         combine_prespecified_weights!(ensemble, w)
@@ -140,34 +141,44 @@ end
 # Predict
 
 function predict(ensemble::Ensemble, Xtest)
+    # Init result
     n = size(Xtest, 1)
-    pred_components = construct_prediction_components(ensemble, Xtest[1, :])
-    pred1     = predict!(ensemble, Xtest[1, :], pred_components)
-    result    = Vector{typeof(pred1)}(undef, n)
-    result[1] = pred1
-    for i = 2:n
-        result[i] = predict!(ensemble, Xtest[i, :], pred_components)
+    pred_components = construct_prediction_components(ensemble, Xtest)
+    pred = nothing
+    for row in Tables.rows(Xtest)
+        pred = predictrow!(ensemble, row, pred_components)
+        !ismissing(pred) && break
+    end
+    result = Vector{Union{Missing, typeof(pred)}}(undef, n)
+
+    # Populate result
+    i = 0
+    result[1] = pred
+    for row in Tables.rows(Xtest)
+        i += 1
+        i == 1 && continue  # Already calculated result[1]
+        result[i] = predict!(ensemble, row, pred_components)
     end
     result
 end
 
-#predict(ensemble::Ensemble, Xtest::Vector{Float64}) = predict(ensemble, [Xtest])
 
-function predict!(ensemble::Ensemble, Xrow, pred_components)
-#function predict!(ensemble::Ensemble, Xrow::Vector{Float64}, pred_components)
+function predictrow!(ensemble::Ensemble, Xrow, pred_components)
     for (k, mchn) in enumerate(components(ensemble))
-        pred_components[k] = predict(mchn, Xrow)
+        pred = predict(mchn, Xrow)
+        ismissing(pred) && return missing
+        pred_components[k] = pred
     end
     MixtureModel(pred_components, weights(ensemble))
 end
 
-#predict(mchn::Machine, Xnew::Vector{Float64})         =  MLJBase.predict(mchn.model, mchn.fitresult, Xnew)
-#predict(mchn::Machine, Xnew::Vector{Vector{Float64}}) = [MLJBase.predict(mchn.model, mchn.fitresult, Xnew) for x in Xnew]
 
-function construct_prediction_components(ensemble, Xtest)
-#function construct_prediction_components(ensemble, Xtest::Vector{Float64})
-    pred = predict(components(ensemble)[1], Xtest)
-    Vector{typeof(pred)}(undef, ncomponents(ensemble))
+function construct_prediction_components(ensemble, X)
+    for row in Tables.rows(X)
+        pred = predict(components(ensemble)[1], row)
+        ismissing(pred) && continue
+        return Vector{typeof(pred)}(undef, ncomponents(ensemble))
+    end
 end
 
 ################################################################################
@@ -175,20 +186,21 @@ end
 
 "Returns: lossfunc(predict(ensemble, X), y)"
 function loss(ensemble, X, y, lossfunc)
-#function loss(ensemble, X::Vector{Vector{Float64}}, y::Vector{Float64}, lossfunc)
     size(X, 1) != size(y, 1) && error("X and y do not have the same number of observations.")
-    pred_components = construct_prediction_components(ensemble, X[1, :])
+    pred_components = construct_prediction_components(ensemble, X)
     loss!(pred_components, ensemble, X, y, lossfunc)
 end
 
 function loss!(pred_components, ensemble, X, y, lossfunc)
     result = 0.0
-    n = size(y, 1)
-    for i = 1:n
-        yhat    = predict!(ensemble, X[i, :], pred_components)
+    i = 0
+    for row in Tables.rows(X)
+        i      += 1
+        yhat    = predictrow!(ensemble, row, pred_components)
+        ismissing(yhat) && continue
         result += lossfunc(yhat, y[i])
     end
-    result / n
+    result / i
 end
 
 end
