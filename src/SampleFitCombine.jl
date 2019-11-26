@@ -157,7 +157,7 @@ function predict(ensemble::Ensemble, X)
     for row in Tables.rows(X)
         i += 1
         i == 1 && continue  # Already calculated result[1]
-        result[i] = predict!(ensemble, row, pred_components)
+        result[i] = predictrow!(ensemble, row, pred_components)
     end
     result
 end
