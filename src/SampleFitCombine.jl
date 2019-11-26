@@ -140,12 +140,12 @@ end
 ################################################################################
 # Predict
 
-function predict(ensemble::Ensemble, Xtest)
+function predict(ensemble::Ensemble, X)
     # Init result
-    n = size(Xtest, 1)
-    pred_components = construct_prediction_components(ensemble, Xtest)
+    n = size(X, 1)
+    pred_components = construct_prediction_components(ensemble, X)
     pred = nothing
-    for row in Tables.rows(Xtest)
+    for row in Tables.rows(X)
         pred = predictrow!(ensemble, row, pred_components)
         !ismissing(pred) && break
     end
@@ -154,7 +154,7 @@ function predict(ensemble::Ensemble, Xtest)
     # Populate result
     i = 0
     result[1] = pred
-    for row in Tables.rows(Xtest)
+    for row in Tables.rows(X)
         i += 1
         i == 1 && continue  # Already calculated result[1]
         result[i] = predict!(ensemble, row, pred_components)
@@ -163,9 +163,9 @@ function predict(ensemble::Ensemble, Xtest)
 end
 
 
-function predictrow!(ensemble::Ensemble, Xrow, pred_components)
+function predictrow!(ensemble::Ensemble, row, pred_components)
     for (k, mchn) in enumerate(components(ensemble))
-        pred = predict(mchn, Xrow)
+        pred = predict(mchn, row)
         ismissing(pred) && return missing
         pred_components[k] = pred
     end
