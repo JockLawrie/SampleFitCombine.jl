@@ -29,9 +29,9 @@ Ensemble{M<:Model}
 """
 struct Ensemble{M<:Model}
     model::M
-    components::Vector{Machine{M}}  # Trained components
-    weights::Vector{Float64}        # Mixing weights
-    Kmax::Int                       # Maximum number of components
+    components::Vector{Machine{M}}
+    weights::Vector{Float64}
+    Kmax::Int
 
     function Ensemble(model, components, weights, Kmax)
         @assert Kmax > 0
@@ -59,7 +59,7 @@ weights(ensemble::Ensemble) = ensemble.weights
 ################################################################################
 # Fit
 
-function fitcomponent!(ensemble::Ensemble, X, y; rows=collect(1:length(y)))
+function fitcomponent!(ensemble::Ensemble, X, y; rows=collect(1:size(y, 1)))
     ncomponents(ensemble) >= max_ncomponents(ensemble) && error("Ensemble already has K=$(max_ncomponents(ensemble)) trained components")
     mchn = machine(ensemble.model, X, y)
     fit!(mchn, rows=rows)
@@ -109,7 +109,7 @@ end
 function combine_optimal_weights!(ensemble, X, y, lossfunc)
     logits = fill(0.0, ncomponents(ensemble) - 1)
     w      = fill(0.0, ncomponents(ensemble))
-    pred_components = construct_prediction_components(ensemble, X[1])
+    pred_components = construct_prediction_components(ensemble, X[1, :])
     function f(b)
         computeweights!(w, b)
         combine_prespecified_weights!(ensemble, w)
@@ -139,50 +139,53 @@ end
 ################################################################################
 # Predict
 
-function predict(ensemble::Ensemble, Xtest::Vector{Vector{Float64}})
+function predict(ensemble::Ensemble, Xtest)
     n = size(Xtest, 1)
-    pred_components = construct_prediction_components(ensemble, Xtest[1])
-    pred1     = predict!(ensemble, Xtest[1], pred_components)
+    pred_components = construct_prediction_components(ensemble, Xtest[1, :])
+    pred1     = predict!(ensemble, Xtest[1, :], pred_components)
     result    = Vector{typeof(pred1)}(undef, n)
     result[1] = pred1
     for i = 2:n
-        result[i] = predict!(ensemble, Xtest[i], pred_components)
+        result[i] = predict!(ensemble, Xtest[i, :], pred_components)
     end
     result
 end
 
-predict(ensemble::Ensemble, Xtest::Vector{Float64}) = predict(ensemble, [Xtest])
+#predict(ensemble::Ensemble, Xtest::Vector{Float64}) = predict(ensemble, [Xtest])
 
-function predict!(ensemble::Ensemble, Xrow::Vector{Float64}, pred_components)
+function predict!(ensemble::Ensemble, Xrow, pred_components)
+#function predict!(ensemble::Ensemble, Xrow::Vector{Float64}, pred_components)
     for (k, mchn) in enumerate(components(ensemble))
         pred_components[k] = predict(mchn, Xrow)
     end
     MixtureModel(pred_components, weights(ensemble))
 end
 
-predict(mchn::Machine, Xnew::Vector{Float64})         =  MLJBase.predict(mchn.model, mchn.fitresult, Xnew)
-predict(mchn::Machine, Xnew::Vector{Vector{Float64}}) = [MLJBase.predict(mchn.model, mchn.fitresult, Xnew) for x in Xnew]
+#predict(mchn::Machine, Xnew::Vector{Float64})         =  MLJBase.predict(mchn.model, mchn.fitresult, Xnew)
+#predict(mchn::Machine, Xnew::Vector{Vector{Float64}}) = [MLJBase.predict(mchn.model, mchn.fitresult, Xnew) for x in Xnew]
 
-function construct_prediction_components(ensemble, Xtest::Vector{Float64})
-    T = typeof(predict(components(ensemble)[1], Xtest))
-    Vector{T}(undef, ncomponents(ensemble))
+function construct_prediction_components(ensemble, Xtest)
+#function construct_prediction_components(ensemble, Xtest::Vector{Float64})
+    pred = predict(components(ensemble)[1], Xtest)
+    Vector{typeof(pred)}(undef, ncomponents(ensemble))
 end
 
 ################################################################################
 # Loss
 
 "Returns: lossfunc(predict(ensemble, X), y)"
-function loss(ensemble, X::Vector{Vector{Float64}}, y::Vector{Float64}, lossfunc)
-    size(X, 1) != length(y) && error("X and y do not have the same number of observations.")
-    pred_components = construct_prediction_components(ensemble, X[1])
+function loss(ensemble, X, y, lossfunc)
+#function loss(ensemble, X::Vector{Vector{Float64}}, y::Vector{Float64}, lossfunc)
+    size(X, 1) != size(y, 1) && error("X and y do not have the same number of observations.")
+    pred_components = construct_prediction_components(ensemble, X[1, :])
     loss!(pred_components, ensemble, X, y, lossfunc)
 end
 
 function loss!(pred_components, ensemble, X, y, lossfunc)
     result = 0.0
-    n = length(y)
+    n = size(y, 1)
     for i = 1:n
-        yhat    = predict!(ensemble, X[i], pred_components)
+        yhat    = predict!(ensemble, X[i, :], pred_components)
         result += lossfunc(yhat, y[i])
     end
     result / n
